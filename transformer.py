@@ -107,6 +107,8 @@ class MLP(nn.Module):
         logits = self.layers(idx)
         return self.relu(logits)
 
+
+
 class Transformer(nn.Module):
     def __init__(self):
         super().__init__()
@@ -147,12 +149,6 @@ class Transformer(nn.Module):
 
 
 model = Transformer()
-
-LOAD_MODEL = False
-if LOAD_MODEL:
-    model = Transformer()
-    model.load_state_dict(torch.load(PATH))
-    model.eval()
 
 
 def train(model: nn.Module):
@@ -209,3 +205,10 @@ def generate_text(input: str, max_token = 1000):
         print(text, end='')
         input_tokens = input_tokens[-context_length:]
                 
+
+def load_model(path: str):
+    model = Transformer()
+    model.load_state_dict(torch.load(path))
+    model.eval()
+    return model
+        

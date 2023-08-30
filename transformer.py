@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,13 +6,17 @@ import time
 import random
 import math
 PATH = "models/pavan_gpt_100k_1.91.bin"
+LOAD_MODEL = False
+
+
+torch.manual_seed(1)
 
 inf = torch.inf
 context_length = 256 # No of tokens
-model_dim = 64 # dimension of the model -> residual stream
-n_layers = 2 # no of layers
+model_dim = 128 # dimension of the model -> residual stream
+n_layers = 6 # no of layers
 n_heads = 0 # No of attention heads for layer # TODO
-head_dim = 16
+head_dim = 128
 vocab_size = 65
 learning_rate = 3e-4
 max_iters = 5000
@@ -78,6 +81,7 @@ class AttentionHead(nn.Module):
         self.query = nn.Linear(model_dim, head_dim)
         self.value = nn.Linear(model_dim, head_dim)
         self.proj = nn.Linear(head_dim, model_dim)
+        self.dropout = nn.Dropout(0.2)
     
     def forward(self, idx):
         key = self.key(idx) # (batch, context_length, head_dim)
@@ -94,20 +98,19 @@ class AttentionHead(nn.Module):
 
         attention_value = attention@value  # (batch, context_length, head_dim)
 
-        return self.proj(attention_value)  # (batch, context_length, model_dim)
+        attention_value = self.proj(attention_value)  # (batch, context_length, model_dim)
+        return self.dropout(attention_value)
     
 
 class MLP(nn.Module):
     def __init__(self):
         super().__init__()
-        self.layers = nn.Sequential(nn.Linear(model_dim, 4*model_dim), nn.Linear(4*model_dim, model_dim))
-        self.relu = nn.ReLU()
+        self.layers = nn.Sequential(nn.Linear(model_dim, 4*model_dim), nn.ReLU(), nn.Linear(4*model_dim, model_dim))
+        self.dropout = nn.Dropout(0.2)
     
     def forward(self, idx):
         logits = self.layers(idx)
-        return self.relu(logits)
-
-
+        return self.dropout(logits)
 
 class Transformer(nn.Module):
     def __init__(self):
@@ -145,70 +148,44 @@ class Transformer(nn.Module):
         return residual_stream, loss
     
 
-
-
-
 model = Transformer()
 
 
-def train(model: nn.Module):
-    train_loss,val_loss = estimate_loss()
-    print(f"Initial training loss: {train_loss}, val loss: {val_loss}")
-
-    loss_value = []
-    val_loss_value = []
-    iters = []
-    optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
-    step_value = max_iters/20
-    start_time = time.time()
-    for iter in range(max_iters):
-        X,Y= sample_data() # (B, context_length)
-        logits, loss = model(X, Y)  # (B, context_length, vocab_size)
-        if iter%step_value ==0:
-            train_loss,val_loss = estimate_loss()
-            iters.append(iter)
-            loss_value.append(train_loss)
-            val_loss_value.append(val_loss)
-            print(f"iter:{iter} training loss: {train_loss}, val loss: {val_loss}")
-
-        
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-        
-    end_time = time.time()
-    print(f"Took {end_time-start_time}s for {max_iters} epochs")
-
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.plot(iters,loss_value, color='blue', label="Training")
-    plt.plot(iters, val_loss_value, "red", label = "validation")
-    plt.legend()
-    plt.show()
-
-
-
-
-
-
-def generate_text(input: str, max_token = 1000):
-    max_tokens = 1000
-    input_tokens = tokenise(input)
-    print(input, end='')
-    
-    for i in range(max_tokens):
-        now = model(input_tokens.unsqueeze(0))[0][-1]
-        now = F.softmax(now, dim= 0)
-        token = torch.multinomial(now,1).item()
-        input_tokens = torch.tensor(input_tokens.tolist() + [token])
-        text = decode([token])
-        print(text, end='')
-        input_tokens = input_tokens[-context_length:]
-                
-
-def load_model(path: str):
+if LOAD_MODEL:
     model = Transformer()
-    model.load_state_dict(torch.load(path))
+    model.load_state_dict(torch.load(PATH))
     model.eval()
-    return model
-        
+
+train_loss,val_loss = estimate_loss()
+print(f"Initial training loss: {train_loss}, val loss: {val_loss}")
+
+loss_value = []
+val_loss_value = []
+iters = []
+optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
+step_value = max_iters/20
+start_time = time.time()
+for iter in range(max_iters):
+    X,Y= sample_data() # (B, context_length)
+    logits, loss = model(X, Y)  # (B, context_length, vocab_size)
+    if iter%step_value ==0:
+        train_loss,val_loss = estimate_loss()
+        iters.append(iter)
+        loss_value.append(train_loss)
+        val_loss_value.append(val_loss)
+        print(f"iter:{iter} training loss: {train_loss}, val loss: {val_loss}")
+
+    
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+    
+end_time = time.time()
+print(f"Took {end_time-start_time}s for {max_iters} epochs")
+
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.plot(iters,loss_value, color='blue', label="Training")
+plt.plot(iters, val_loss_value, "red", label = "validation")
+plt.legend()
+plt.show()
